@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard POS - Gestión Comercial</title>
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <!-- Chart.js Adapter Date -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <!-- PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Flatpickr date picker -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <!-- Choices.js multi-select -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ===================== SIDEBAR ===================== -->
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <i class="bi bi-grid-3x3-gap-fill"></i>
+    <span class="brand-text">POS Dashboard</span>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item active" data-tab="resumen" onclick="switchTab('resumen',this)">
+      <i class="bi bi-speedometer2"></i><span>Resumen Ejecutivo</span>
+    </a>
+    <a class="nav-item" data-tab="afiliaciones" onclick="switchTab('afiliaciones',this)">
+      <i class="bi bi-shop"></i><span>Afiliaciones</span>
+    </a>
+    <a class="nav-item" data-tab="tecnico" onclick="switchTab('tecnico',this)">
+      <i class="bi bi-tools"></i><span>Gestión Técnica</span>
+    </a>
+    <a class="nav-item" data-tab="equipos" onclick="switchTab('equipos',this)">
+      <i class="bi bi-credit-card-2-front"></i><span>Equipos y Desempeño</span>
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <small id="lastUpdated">Sin datos</small>
+  </div>
+</div>
+
+<!-- ===================== MAIN CONTENT ===================== -->
+<div class="main-wrapper" id="mainWrapper">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <button class="btn btn-icon me-2" onclick="toggleSidebar()"><i class="bi bi-list fs-5"></i></button>
+    <h5 class="mb-0 flex-grow-1" id="pageTitle">Resumen Ejecutivo</h5>
+    <div class="topbar-actions">
+      <!-- Excel Upload -->
+      <label class="btn btn-outline-success btn-sm" title="Cargar Excel y subir a Sheets">
+        <i class="bi bi-file-earmark-excel"></i> Cargar Excel
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleExcelUpload(event)"/>
+      </label>
+      <!-- Refresh -->
+      <button class="btn btn-primary btn-sm" onclick="refreshAllData()" title="Refrescar datos desde Google Sheets">
+        <i class="bi bi-arrow-clockwise" id="refreshIcon"></i> Refrescar
+      </button>
+    </div>
+  </header>
+
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+    <div class="filter-group">
+      <label><i class="bi bi-calendar3"></i> Período</label>
+      <input type="text" id="dateRangePicker" class="form-control form-control-sm" placeholder="Seleccionar rango"/>
+    </div>
+    <div class="filter-group">
+      <label><i class="bi bi-geo-alt"></i> Región / Estado</label>
+      <select id="filterRegion" class="form-select form-select-sm" multiple>
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label><i class="bi bi-tag"></i> Categoría</label>
+      <select id="filterCategoria" class="form-select form-select-sm" multiple>
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label><i class="bi bi-building"></i> Proveedor</label>
+      <select id="filterProveedor" class="form-select form-select-sm" multiple>
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <button class="btn btn-sm btn-secondary" onclick="applyFilters()">
+      <i class="bi bi-funnel"></i> Aplicar
+    </button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="clearFilters()">
+      <i class="bi bi-x-circle"></i> Limpiar
+    </button>
+  </div>
+
+  <!-- ============ LOADING OVERLAY ============ -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner-border text-primary" role="status"></div>
+    <p class="mt-3">Cargando datos...</p>
+  </div>
+
+  <!-- ============ TAB: RESUMEN EJECUTIVO ============ -->
+  <div class="tab-content active" id="tab-resumen">
+    <div class="section-title"><i class="bi bi-speedometer2"></i> KPIs Principales</div>
+
+    <!-- KPI CARDS ROW 1 -->
+    <div class="kpi-grid">
+      <div class="kpi-card primary">
+        <div class="kpi-icon"><i class="bi bi-shop-window"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-totalAfiliados">—</div>
+          <div class="kpi-label">Comercios Afiliados</div>
+          <div class="kpi-sub" id="kpi-afiliados-sub"></div>
+        </div>
+      </div>
+      <div class="kpi-card success">
+        <div class="kpi-icon"><i class="bi bi-cpu"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-terminalesActivos">—</div>
+          <div class="kpi-label">Terminales Activos</div>
+          <div class="kpi-sub" id="kpi-terminales-sub"></div>
+        </div>
+      </div>
+      <div class="kpi-card warning">
+        <div class="kpi-icon"><i class="bi bi-currency-dollar"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-montoBS">—</div>
+          <div class="kpi-label">Monto Transaccional (Bs)</div>
+          <div class="kpi-sub" id="kpi-montoMM-sub"></div>
+        </div>
+      </div>
+      <div class="kpi-card info">
+        <div class="kpi-icon"><i class="bi bi-receipt"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-cantTx">—</div>
+          <div class="kpi-label">Cantidad Transacciones</div>
+          <div class="kpi-sub" id="kpi-cantTx-sub"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI CARDS ROW 2 -->
+    <div class="kpi-grid">
+      <div class="kpi-card purple">
+        <div class="kpi-icon"><i class="bi bi-calendar-month"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-promedioMensual">—</div>
+          <div class="kpi-label">Promedio Mensual Afiliaciones</div>
+          <div class="kpi-sub">últimos 12 meses</div>
+        </div>
+      </div>
+      <div class="kpi-card teal">
+        <div class="kpi-icon"><i class="bi bi-calendar-day"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-promedioDiario">—</div>
+          <div class="kpi-label">Promedio Diario Afiliaciones</div>
+          <div class="kpi-sub">días hábiles</div>
+        </div>
+      </div>
+      <div class="kpi-card orange">
+        <div class="kpi-icon"><i class="bi bi-person-gear"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-usuariosR4">—</div>
+          <div class="kpi-label">Usuarios Gestión Diaria (R4)</div>
+          <div class="kpi-sub" id="kpi-usuariosR4-sub"></div>
+        </div>
+      </div>
+      <div class="kpi-card danger">
+        <div class="kpi-icon"><i class="bi bi-exclamation-triangle"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-sinActividad">—</div>
+          <div class="kpi-label">Terminales Sin Actividad</div>
+          <div class="kpi-sub" id="kpi-sinActividad-sub"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI CARDS ROW 3 (Gestión técnica diaria) -->
+    <div class="kpi-grid kpi-grid-5">
+      <div class="kpi-card teal-dark">
+        <div class="kpi-icon"><i class="bi bi-box-arrow-in-down"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-instDiarias">—</div>
+          <div class="kpi-label">Instalaciones Hoy</div>
+        </div>
+      </div>
+      <div class="kpi-card red-dark">
+        <div class="kpi-icon"><i class="bi bi-box-arrow-up"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-desinstDiarias">—</div>
+          <div class="kpi-label">Desinstalaciones Hoy</div>
+        </div>
+      </div>
+      <div class="kpi-card amber">
+        <div class="kpi-icon"><i class="bi bi-wrench-adjustable"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-correctDiarios">—</div>
+          <div class="kpi-label">Correctivos Hoy</div>
+        </div>
+      </div>
+      <div class="kpi-card blue-dark">
+        <div class="kpi-icon"><i class="bi bi-hdd-network"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-equiposActivos">—</div>
+          <div class="kpi-label">Equipos Activos Diarios</div>
+        </div>
+      </div>
+      <div class="kpi-card green-dark">
+        <div class="kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-value" id="kpi-tasasModificadas">—</div>
+          <div class="kpi-label">Clientes Tasa Modificada</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHARTS ROW RESUMEN -->
+    <div class="charts-grid-2">
+      <div class="chart-card">
+        <div class="chart-header">
+          <span><i class="bi bi-bar-chart-line"></i> Afiliaciones por Mes (Últimos 12 meses)</span>
+        </div>
+        <div class="chart-body"><canvas id="chart-afiliacionesMes"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <span><i class="bi bi-pie-chart"></i> Distribución Gestión Técnica Reciente</span>
+        </div>
+        <div class="chart-body"><canvas id="chart-gestionResumen"></canvas></div>
+      </div>
+    </div>
+  </div><!-- /tab-resumen -->
+
+  <!-- ============ TAB: AFILIACIONES ============ -->
+  <div class="tab-content" id="tab-afiliaciones">
+    <div class="section-title"><i class="bi bi-shop"></i> Afiliaciones y Usuarios</div>
+
+    <!-- Time selector -->
+    <div class="time-toggle mb-3">
+      <button class="btn btn-sm btn-outline-primary active" onclick="setAfiliacionesPeriod('anio',this)">Por Año</button>
+      <button class="btn btn-sm btn-outline-primary" onclick="setAfiliacionesPeriod('mes',this)">Por Mes</button>
+      <button class="btn btn-sm btn-outline-primary" onclick="setAfiliacionesPeriod('dia',this)">Por Día</button>
+    </div>
+
+    <div class="charts-grid-2">
+      <div class="chart-card col-span-2">
+        <div class="chart-header">
+          <span><i class="bi bi-graph-up"></i> Afiliaciones Históricas</span>
+          <select id="afiliacionesYearSel" class="form-select form-select-sm w-auto" onchange="renderAfiliacionesChart()">
+            <option value="all">Todos los años</option>
+          </select>
+        </div>
+        <div class="chart-body chart-body-lg"><canvas id="chart-afiliacionesHistorico"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid-2">
+      <!-- Venezuela Map -->
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-map"></i> Distribución por Estado (Afiliaciones)</span></div>
+        <div class="chart-body map-container" id="mapAfiliaciones">
+          <!-- SVG Map rendered by JS -->
+        </div>
+        <div id="mapAfiliacionesLegend" class="map-legend"></div>
+      </div>
+
+      <!-- Top Categorias -->
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-list-ol"></i> Top Categorías Comerciales</span></div>
+        <div class="chart-body"><canvas id="chart-topCategorias"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid-2">
+      <!-- Top Usuarios R4 -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <span><i class="bi bi-person-badge"></i> Top Usuarios R4 – Afiliaciones</span>
+        </div>
+        <div class="chart-body"><canvas id="chart-topUsuariosR4-afil"></canvas></div>
+      </div>
+      <!-- Promedio diario por usuario R4 -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <span><i class="bi bi-person-lines-fill"></i> Promedio Diario Usuario R4</span>
+        </div>
+        <div class="chart-body"><canvas id="chart-promDiarioR4-afil"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Table: Clientes tasa modificada -->
+    <div class="chart-card mt-3">
+      <div class="chart-header"><span><i class="bi bi-percent"></i> Clientes con Tasas Modificadas</span></div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover" id="tablaTasasModificadas">
+          <thead><tr><th>Cod Afiliado</th><th>Comercio</th><th>Categoría</th><th>Estado</th><th>Tasa</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /tab-afiliaciones -->
+
+  <!-- ============ TAB: GESTIÓN TÉCNICA ============ -->
+  <div class="tab-content" id="tab-tecnico">
+    <div class="section-title"><i class="bi bi-tools"></i> Gestión Técnica</div>
+
+    <div class="charts-grid-2">
+      <div class="chart-card col-span-2">
+        <div class="chart-header"><span><i class="bi bi-activity"></i> Línea de Tiempo – Gestiones Técnicas (Últimos 12 Meses)</span></div>
+        <div class="chart-body chart-body-lg"><canvas id="chart-gestionTimeline"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid-2">
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-arrow-left-right"></i> Instalaciones vs. Desinstalaciones</span></div>
+        <div class="chart-body"><canvas id="chart-instVsDesinst"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-trophy"></i> Top Manejadores (Volumen Gestiones)</span></div>
+        <div class="chart-body"><canvas id="chart-topManejadoresTec"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid-2">
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-person-badge"></i> Top Usuarios Creador R4 – Técnico</span></div>
+        <div class="chart-body"><canvas id="chart-topUsuariosR4-tec"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-person-lines-fill"></i> Promedio Diario Creador R4</span></div>
+        <div class="chart-body"><canvas id="chart-promDiarioR4-tec"></canvas></div>
+      </div>
+    </div>
+  </div><!-- /tab-tecnico -->
+
+  <!-- ============ TAB: EQUIPOS Y DESEMPEÑO ============ -->
+  <div class="tab-content" id="tab-equipos">
+    <div class="section-title"><i class="bi bi-credit-card-2-front"></i> Equipos y Desempeño</div>
+
+    <div class="charts-grid-2">
+      <!-- Mapa Venezuela Montos -->
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-map-fill"></i> Distribución Monto MM por Estado</span></div>
+        <div class="chart-body map-container" id="mapEquipos"></div>
+        <div id="mapEquiposLegend" class="map-legend"></div>
+      </div>
+
+      <!-- Riesgo parque activo -->
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-shield-exclamation"></i> Riesgo: Parque Activo (Actividad)</span></div>
+        <div class="chart-body"><canvas id="chart-riesgoParque"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid-2">
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-phone"></i> Distribución por Modelo</span></div>
+        <div class="chart-body"><canvas id="chart-distribModelo"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><span><i class="bi bi-bar-chart"></i> Top Categorías (Monto MM)</span></div>
+        <div class="chart-body"><canvas id="chart-topCatEquipos"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-card mt-3">
+      <div class="chart-header"><span><i class="bi bi-people"></i> Top Manejadores (Monto MM)</span></div>
+      <div class="chart-body"><canvas id="chart-topManejadoresEquipos"></canvas></div>
+    </div>
+  </div><!-- /tab-equipos -->
+
+</div><!-- /main-wrapper -->
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="toastMsg" class="toast align-items-center text-bg-primary border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="toastText">Mensaje</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
